@@ -1,0 +1,12 @@
+*.swo
+*.swk
+*.swp
+*.swk
+*.root
+*.eps
+*.pdf
+*.jpg
+*bin/*
+*build/*
+*aDict.cxx
+*vector_lib/*
