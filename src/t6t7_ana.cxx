@@ -21,7 +21,7 @@ VMMAna::VMMAna() :
     m_calib_file(""),
     m_calib(false)
 {
-    gSystem->Load("/Users/dantrim/workarea/NSW/myanalysis/vmm-ana/vector_lib/libMylib");
+    gSystem->Load("/Users/dantrim/workarea/NSW/myanalysis/vmm-analysis/vector_lib/libMylib");
 }
 //--------------------------------------------------------------//
 // comparison operators for hits/clusters
@@ -34,7 +34,7 @@ struct clusPdoLarger {
 } byClusPdo;
 
 struct clusPdoEqual {
-    bool operator()(vmm::Cluster a, vmm::Cluster b) { return a.pdo() == b.pdo(); }
+    bool operator()(vmm::Cluster a, vmm::Cluster b) { return ((a.pdo() == b.pdo()) && (a.chamber()==b.chamber())); }
 } clusPdoEqual;
 
 
@@ -144,6 +144,16 @@ Bool_t VMMAna::Process(Long64_t entry)
     //for(int i = 0; i < n_clusters; i++)
     //    clusters.at(i).print();
 
+  //  cout << "-----------------------------------------" << endl;
+  //  for(auto cluster : clusters) {
+  //      cout << "cluster chamber: " << cluster.chamber() << endl;
+  //      for(int i = 0; i < (int)cluster.m_hits.size(); i++) {
+  //      cout << "   --> strip: " << cluster.m_hits.at(i).chip() << endl;
+  //      }
+
+  //  }
+
+
     removeDuplicateClusters();
     removeDuplicateStripsInClusters();
 
@@ -188,12 +198,25 @@ void VMMAna::fillRawHistograms()
 //--------------------------------------------------------------//
 void VMMAna::fillClusterMultiplicityHistos()
 {
-    h_num_cluster->Fill(clusters.size());
+    int n_cluster_t6 = 0;
+    int n_cluster_t7 = 0;
+    for(auto cluster : clusters) {
+        if(cluster.chamber()==0) n_cluster_t6++;
+        else if(cluster.chamber()==1) n_cluster_t7++;
+    }
+    h_num_cluster.at(0)->Fill(n_cluster_t6);
+    h_num_cluster.at(1)->Fill(n_cluster_t7);
 
     if(clusters.size()>0) {
         for(auto& cluster : clusters) {
-            h_cluster_size->Fill(cluster.size());
-            h2_num_cluster_vs_cluster_size->Fill(clusters.size(), cluster.size());
+            if(cluster.chamber()==0) {
+                h_cluster_size.at(0)->Fill(cluster.size());
+                h2_num_cluster_vs_cluster_size.at(0)->Fill(n_cluster_t6, cluster.size());
+            } // T6
+            else if(cluster.chamber()==1) {
+                h_cluster_size.at(1)->Fill(cluster.size());
+                h2_num_cluster_vs_cluster_size.at(1)->Fill(n_cluster_t7, cluster.size());
+            }
         }
     }
 }
@@ -314,9 +337,11 @@ void VMMAna::fillClusterHistos()
 
                 } // strip
 
+                int cluster_size_cut = 3;
+
                 for(int i = 0; i < 2; i++) {
                     if(!(cl_pdo.at(i)>0.)) continue;
-                    if(!(cluster.size()>=2)) continue;
+                    if(!(cluster.size()>=cluster_size_cut)) continue;
                     h_cl_charge.at(i)->Fill(cl_pdo.at(i));
                     h_cl_charge_calib.at(i)->Fill(cl_pdo_calibrated.at(i));
                     h_cl_charge_adc_fix.at(i)->Fill(cl_pdo_adc_fix.at(i));
@@ -324,6 +349,7 @@ void VMMAna::fillClusterHistos()
 
                 for(int i = 0; i < 2; i++) {
                     if(!(cl_pdo.at(i)>0)) continue;
+                    if(!(cluster.size()>=cluster_size_cut)) continue;
                     cl_position.at(i) = cl_position.at(i) / cl_pdo.at(i);
                     h_cl_position.at(i)->Fill(cl_position.at(i));
                 }
@@ -401,14 +427,49 @@ void VMMAna::initRawHistos()
 }
 void VMMAna::initClusterMultiplicityHistos()
 {
-    h_num_cluster = new TH1F("h_num_cluster", "Number of Clusters Per Event", 20, 0, 20);
+    // number of clusters in each chamber
+    stringstream name;
+    for(int i = 0; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Number of Clusters/Event";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 20, 0, 20);
+        h->GetXaxis()->SetTitle("# of clusters");
+        h->GetYaxis()->SetTitle("# of entries");
+        h_num_cluster.push_back(h);
+    }
+    name.str("");
 
-    h_cluster_size = new TH1F("h_cluster_size", "Size of Clusters", 10, 0, 10);
+    // cluster size at each chamber
+    for(int i = 0; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Size of Clusters";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 10, 0, 10);
+        h->GetXaxis()->SetTitle("# of strips");
+        h->GetYaxis()->SetTitle("# of Entries");
+        h_cluster_size.push_back(h);
+    }
+    name.str("");
 
-    h2_num_cluster_vs_cluster_size = new TH2F("num_cluster_vs_cluster_size",
-            "Cluster Multiplicity vs. Cluster Size", 20, 0, 20, 10, 0, 10);
-    h2_num_cluster_vs_cluster_size->GetXaxis()->SetTitle("# of clusters per event");
-    h2_num_cluster_vs_cluster_size->GetYaxis()->SetTitle("# of strips per cluster");
+    // cl size vs multiplicity
+    for(int i = 0; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Cluster Mult. vs. Size";
+        TH2F* h = new TH2F(name.str().c_str(), name.str().c_str(), 20, 0, 20, 10, 0, 10);
+        h->GetXaxis()->SetTitle("# of clusters per event");
+        h->GetYaxis()->SetTitle("# of strips per cluster");
+        h2_num_cluster_vs_cluster_size.push_back(h);
+    }
+    name.str("");
+
+
+    //h_num_cluster = new TH1F("h_num_cluster", "Number of Clusters Per Event", 20, 0, 20);
+
+    //h_cluster_size = new TH1F("h_cluster_size", "Size of Clusters", 10, 0, 10);
+
+    //h2_num_cluster_vs_cluster_size = new TH2F("num_cluster_vs_cluster_size",
+    //        "Cluster Multiplicity vs. Cluster Size", 20, 0, 20, 10, 0, 10);
+    //h2_num_cluster_vs_cluster_size->GetXaxis()->SetTitle("# of clusters per event");
+    //h2_num_cluster_vs_cluster_size->GetYaxis()->SetTitle("# of strips per cluster");
 
 }
 void VMMAna::initCleanedChargeHistos()
@@ -458,7 +519,7 @@ void VMMAna::initClusterChargeHistos()
     for(int i = 0 ; i < 2; i++) {
         name.str("");
         name << "T" << (i==0 ? "6" : "7") << " : Cluster charge";
-        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 100, 0, 2500);
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 200, 0, 4000);
         h->GetXaxis()->SetTitle("PDO [ADC counts]");
         h->GetYaxis()->SetTitle("# of entries");
         h->GetYaxis()->SetTitleOffset(1.5);
@@ -551,14 +612,35 @@ void VMMAna::drawClusterMultiplicityHistos()
 {
     stringstream save_name;
     c_cluster_mult = new TCanvas("c_cluster_mult", "", 800, 400);
-    c_cluster_mult->Divide(3,1);
+    c_cluster_mult->Divide(3,2);
 
-    c_cluster_mult->cd(1);
-    h_num_cluster->Draw();
-    c_cluster_mult->cd(2);
-    h_cluster_size->Draw();
-    c_cluster_mult->cd(3);
-    h2_num_cluster_vs_cluster_size->Draw("colz");
+    for(int i = 0; i < 3; i++) {
+        if(i==0) {
+            c_cluster_mult->cd(i+1);
+            h_num_cluster.at(0)->Draw();
+            c_cluster_mult->cd(i+4);
+            h_num_cluster.at(1)->Draw();
+        }
+        else if(i==1) {
+            c_cluster_mult->cd(i+1);
+            h_cluster_size.at(0)->Draw();
+            c_cluster_mult->cd(i+4);
+            h_cluster_size.at(1)->Draw();
+        }
+        else if(i==2) {
+            c_cluster_mult->cd(i+1);
+            h2_num_cluster_vs_cluster_size.at(0)->Draw("colz");
+            c_cluster_mult->cd(i+4);
+            h2_num_cluster_vs_cluster_size.at(1)->Draw("colz");
+        }
+    }
+
+   // c_cluster_mult->cd(1);
+   // h_num_cluster->Draw();
+   // c_cluster_mult->cd(2);
+   // h_cluster_size->Draw();
+   // c_cluster_mult->cd(3);
+   // h2_num_cluster_vs_cluster_size->Draw("colz");
 
     save_name << "cluster_mult_" << runNumberStr() << ".eps";
     c_cluster_mult->SaveAs(save_name.str().c_str());
@@ -757,6 +839,21 @@ int VMMAna::makeClusters()
     for(int i = 0; i < (int)tmpHits.size(); i++) {
         vmm::Cluster cluster;
         vmm::Hit hiti = tmpHits.at(i);
+
+        int chamber_no = -1;
+        if(hiti.chip()>=0 && hiti.chip()<4) {
+            chamber_no = 0; // T6
+        }
+        else if(hiti.chip()>=4 && hiti.chip()<8) {
+            chamber_no = 1; // T7
+        }
+
+        if(chamber_no < 0) {
+            cout << "VMMAna::makeClusters    Cluster at negative chamber number. Exitting." << endl;
+            exit(1);
+        }
+
+        cluster.setChamberNo(chamber_no);
         cluster.addHit(hiti);
 
         for(int j = i+1; j < (int)tmpHits.size(); j++) {
@@ -764,6 +861,15 @@ int VMMAna::makeClusters()
             move_j = true;
 
             vmm::Hit hitj = tmpHits.at(j);
+            int j_chamber = -1;
+            if( hitj.chip()>=0 && hitj.chip()<4) j_chamber = 0;
+            else if(hitj.chip()>=4 && hitj.chip()<8) j_chamber = 1;
+            if(j_chamber<0) {
+                cout << "VMMAna::makeClusters Cluster j at negative chamber number. Exitting." << endl;
+                exit(1);
+            }
+            if( !(chamber_no==j_chamber) ) continue;
+
 
             if( (fabs(hiti.gray()-hitj.gray())<=12) &&
                 (fabs(hiti.strip()-hitj.strip())<=5) &&

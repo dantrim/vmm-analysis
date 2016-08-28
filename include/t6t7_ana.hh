@@ -114,9 +114,9 @@ class VMMAna : public TSelector {
 
         // cluster multiplicity
         TCanvas* c_cluster_mult;
-        TH1F* h_num_cluster;
-        TH1F* h_cluster_size;
-        TH2F* h2_num_cluster_vs_cluster_size;
+        std::vector<TH1F*> h_num_cluster; // one for each chamber
+        std::vector<TH1F*> h_cluster_size; // one for each chamber
+        std::vector<TH2F*> h2_num_cluster_vs_cluster_size; // one for each chamber
 
         // "cleaned" charge histos
         TCanvas* c_pdo;

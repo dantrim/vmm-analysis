@@ -12,6 +12,7 @@ using namespace vmm;
 // Constructor
 Cluster::Cluster() :
     m_clus_pdo(0),
+    m_chamber_no(0),
     n_duplicate_strips(0)
 {
     m_hits.clear();
@@ -64,7 +65,7 @@ void Cluster::removeDuplicateStrips()
 void Cluster::print()
 {
     cout << " ---------------- Cluster::print ------------------ " << endl;
-    cout << "  cluster size: " << size() << endl;
+    cout << "  cluster on chamber: " << chamber() << ", size: " << size() << endl;
     for(int i = 0; i < (int)m_hits.size(); i++)
         m_hits.at(i).print();
 }

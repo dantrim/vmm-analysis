@@ -29,7 +29,7 @@ void help()
 
 int main(int argc, char* argv[])
 {
-    gSystem->Load("/Users/dantrim/workarea/NSW/myanalysis/vmm-ana/vector_lib/libMylib");
+    gSystem->Load("/Users/dantrim/workarea/NSW/myanalysis/vmm-analysis/vector_lib/libMylib");
 
     int nEvt            = -1;
     int dbg             = 0;

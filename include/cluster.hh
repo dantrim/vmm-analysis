@@ -16,6 +16,8 @@ class Cluster
         Cluster();
         virtual ~Cluster(){};
 
+        void setChamberNo(int number) { m_chamber_no = number; }
+
         void addHit(Hit h);
         int size() { return (int)m_hits.size(); }
 
@@ -26,12 +28,14 @@ class Cluster
         int duplicateStrips() { return n_duplicate_strips; }
         
         int pdo() { return m_clus_pdo; }
+        int chamber() { return m_chamber_no; }
 
         void print();
+        std::vector<Hit> m_hits;
 
     private :
-        std::vector<Hit> m_hits;
         int m_clus_pdo;
+        int m_chamber_no;
         int n_duplicate_strips;
 
 }; // class
