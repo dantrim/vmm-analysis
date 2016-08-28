@@ -65,6 +65,15 @@ class VMMAna : public TSelector {
         void removeDuplicateClusters();
         void removeDuplicateStripsInClusters();
 
+        // check cluster size
+        bool passClusterSize(int n_strips_per_cluster);
+
+        // check if there is exactly X clusters per layer
+        bool nClusterPerLayer(int how_many, bool exclusive_or_inclusive);
+
+        // check if remaining clusters overlap
+        bool overlappingClusters(int n_min_common = 1); 
+
         std::string intToBinaryStr(int num);
         int binaryStrToInt(std::string binary);
 
@@ -77,6 +86,7 @@ class VMMAna : public TSelector {
         void initCleanedChargeHistos();
         void initClusterChargeHistos();
         void initClusterPositionHistos();
+        void initResidualHistos();
 
         ///////////////////////////////////////////////
         // histogram filling
@@ -84,6 +94,7 @@ class VMMAna : public TSelector {
         void fillRawHistograms();
         void fillClusterMultiplicityHistos();
         void fillClusterHistos();
+        void fillClusterHistos_OR();
 
         ///////////////////////////////////////////////
         // histogram drawing
@@ -94,6 +105,9 @@ class VMMAna : public TSelector {
         void drawCleanedChargeHistos();
         void drawClusterChargeHistos();
         void drawClusterPositionHistos();
+        void drawClusterChargeHistos_OR();
+        void drawClusterPositionHistos_OR();
+        void drawClusterResidualHistos();
 
 
         //////////////////////////////////////////////////////////////////////
@@ -133,6 +147,22 @@ class VMMAna : public TSelector {
         // cluster position histos
         TCanvas* c_cluster_position;
         std::vector<TH1F*> h_cl_position;
+
+        // cluster histos after OR and cluster size requirements
+        TCanvas* c_cluster_charge_OR;
+        std::vector<TH1F*> h_cl_charge_OR;
+        std::vector<TH1F*> h_cl_charge_calib_OR;
+        std::vector<TH1F*> h_cl_charge_adc_fix_OR;
+
+        TCanvas* c_cluster_position_OR;
+        std::vector<TH1F*> h_cl_position_OR;
+
+        // difference between cluster position in T6 and T7
+        TCanvas* c_cluster_residual;
+        TH1F* h_cl_residual;
+
+        TCanvas* c_t6cl_vs_t7cl;
+        TH2F* h2_cl_position_T6vsT7;
         
 
 

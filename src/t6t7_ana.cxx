@@ -80,7 +80,7 @@ void VMMAna::loadCalibration()
         std::vector<double> t6_channel;
         std::vector<double> t6_gain;
         std::vector<double> t6_pedestal;
-        for(int i = 0; i < 128; i++) {
+        for(int i = 0; i < 256; i++) {
             t6_channel.push_back(i);
             t6_gain.push_back(3.);
             t6_pedestal.push_back(32.);
@@ -92,13 +92,13 @@ void VMMAna::loadCalibration()
         std::vector<double> t7_channel;
         std::vector<double> t7_gain;
         std::vector<double> t7_pedestal;
-        for(int i = 0; i < 128; i++) {
+        for(int i = 0; i < 256; i++) {
             t7_channel.push_back(i);
             t7_gain.push_back(3.);
             t7_pedestal.push_back(32.);
         } // i
         m_channel_calib.push_back(t7_channel);
-        m_channel_gain_calib.push_back(t7_channel);
+        m_channel_gain_calib.push_back(t7_gain);
         m_channel_pedestal_calib.push_back(t7_pedestal);
     }
 
@@ -156,12 +156,23 @@ Bool_t VMMAna::Process(Long64_t entry)
 
     removeDuplicateClusters();
     removeDuplicateStripsInClusters();
-
     int n_clusters_after_overlap = clusters.size();
 
     fillClusterMultiplicityHistos();
-
     fillClusterHistos();
+
+    // require certain number of strips per cluster
+    if(!(passClusterSize(3))) return false;
+
+    // now apply some cuts and apply matching between T6/T7
+    // > here require exactly 1 cluster per layer
+    if(!(nClusterPerLayer(1, true))) return false;
+
+    // check if clusters are overlapping, require X number of
+    // strips to be overlapping between T6 and T7
+    if(!(overlappingClusters(1))) return false;
+
+    fillClusterHistos_OR();
     
 
     return true;
@@ -369,6 +380,219 @@ void VMMAna::fillClusterHistos()
 
 }
 //--------------------------------------------------------------//
+void VMMAna::fillClusterHistos_OR()
+{
+    double pitch = 0.4; // mm (400 um)
+    if(clusters.size()>0) {
+        for(auto& cluster : clusters) {
+
+            int cl_pdo = 0;
+            double cl_pdo_calibrated = 0.0;
+            double cl_pdo_adc_fix = 0.0;
+            double cl_position = 0.0;
+            double cl_position_calibrated = 0.0;
+
+            vector<vmm::Hit>& cl_strips = cluster.hits();
+
+            for(auto strip : cl_strips) {
+
+                // just doing ADC fix for lolz, probably not applicable
+                string pdo_binary = intToBinaryStr(strip.pdo());
+                string key = "0000";
+                int found = pdo_binary.rfind(key);
+                int channel_pdo_adc_fix = 0;
+                if(pdo_binary.length()-found==4 && found!=-1) {
+                    channel_pdo_adc_fix = (binaryStrToInt(pdo_binary)-1)*16+gRandom->Integer(16);
+                }
+                else {
+                    channel_pdo_adc_fix = strip.pdo();
+                }
+
+                // apply calibration
+                double channel_pdo_calib = strip.pdo();
+                if(calib()) {
+                    cout << "VMMAna::fillClusterHistos_OR    Attempting to apply calibration. This is not setup. Exitting." << endl;
+                    exit(1);
+                }
+                else {
+                    channel_pdo_calib = (3.*channel_pdo_calib)/m_channel_gain_calib[cluster.chamber()][strip.channel()];
+                }
+
+
+                /////////////////////////////////////////
+                // histos
+                /////////////////////////////////////////
+                if(strip.pdo()) {
+                    cl_pdo += strip.pdo();
+                    cl_position += strip.pdo()*(strip.strip()*pitch + pitch/2.); // centroid
+
+                    // post-calib
+                    cl_pdo_calibrated += channel_pdo_calib;
+                    cl_position_calibrated += channel_pdo_calib*(strip.strip()*pitch + pitch/2.);
+
+                    // adc fix
+                    cl_pdo_adc_fix += channel_pdo_adc_fix;
+                    
+                } // pdo > 0
+            } // strip 
+
+            // have looped over all the strips in this cluster, now fill histos
+            int ch = cluster.chamber();
+            h_cl_charge_OR.at(ch)->Fill(cl_pdo);
+            h_cl_charge_calib_OR.at(ch)->Fill(cl_pdo_calibrated);
+            h_cl_charge_adc_fix_OR.at(ch)->Fill(cl_pdo_adc_fix);
+
+            cl_position = cl_position / cl_pdo;
+            h_cl_position_OR.at(ch)->Fill(cl_position);
+
+        } // cluster
+
+    } // size > 0
+}
+//--------------------------------------------------------------//
+bool VMMAna::passClusterSize(int n_strip_per_cluster)
+{
+    vector<vmm::Cluster> tmpClusters;
+
+    for(auto cluster : clusters) {
+        if(cluster.size() >= n_strip_per_cluster) {
+            tmpClusters.push_back(cluster);
+        }
+    }
+    clusters.clear();
+
+    for(auto cluster : tmpClusters) {
+        clusters.push_back(cluster);
+    }
+    return clusters.size();
+
+}
+//--------------------------------------------------------------//
+bool VMMAna::nClusterPerLayer(int n_per_layer, bool exclusive)
+{
+    bool pass = false;
+
+    int n_t6 = 0;
+    int n_t7 = 0;
+
+    for(auto cluster : clusters) {
+        if(cluster.chamber()==0) n_t6++;
+        else if(cluster.chamber()==1) n_t7++;
+    } // cluster
+
+    if(exclusive) {
+        if(n_t6==n_per_layer && n_t7==n_per_layer) pass = true;
+    }
+    else if(!exclusive) {
+        if(n_t6>=n_per_layer && n_t7>=n_per_layer) pass = true;
+    }
+    return pass;
+
+}
+//--------------------------------------------------------------//
+bool VMMAna::overlappingClusters(int n_min_common)
+{
+
+    bool overlap = false;
+
+    // actually lets do overlap based on centroid position
+    double pitch = 0.4;
+    double t6_position = 0.0;
+    int t6_pdo = 0.0;
+    double t7_position = 0.0;
+    int t7_pdo = 0.0;
+
+    if(clusters.size()>0) {
+        for(auto& cluster : clusters) {
+            if(cluster.size()>=1) {
+
+                vector<vmm::Hit>& cl_strips = cluster.hits();
+                for(auto strip : cl_strips) {
+
+                    if(cluster.chamber()==0) {
+                        t6_position += strip.pdo()*(strip.strip()*pitch + pitch/2.);
+                        t6_pdo += strip.pdo();
+                    }
+                    else {
+                        t7_position += strip.pdo()*(strip.strip()*pitch + pitch/2.);
+                        t7_pdo += strip.pdo();
+                    }
+
+                } //strip
+            } // # of strips in cluster >=1
+        } // loop over cluster
+    } // if >0 clusters
+
+    t6_position = t6_position / t6_pdo; 
+    t7_position = t7_position / t7_pdo;
+
+    double residual = t7_position - t6_position;
+    //h_cl_residual->Fill(residual);
+
+    // find the offset of T7
+    // correct T7 position 
+    t7_position = 1.06 * t7_position;
+    h2_cl_position_T6vsT7->Fill(t6_position, t7_position);
+
+    double overlap_condition = pitch + pitch/2.;
+    //cout << "t6_position - t7_position > " << t6_position << " - " << t7_position << " = " << (t6_position-t7_position) << "  residual: " << residual << endl;
+    if(fabs(t7_position - t6_position) <= overlap_condition) overlap = true;
+
+    if(overlap) h_cl_residual->Fill(residual);
+
+    //return overlap;
+     
+
+
+    // gather the strip numbers associated with each of the clusters in T6/T7
+
+//    vector<int> strips_t6;
+//    vector<int> strips_t7;
+//
+//    strips_t6.clear();
+//    strips_t7.clear(); 
+//
+//    for(auto cluster : clusters) {
+//        if(cluster.chamber()==0) {
+//            for(auto strip : cluster.hits()) {
+//                strips_t6.push_back(strip.strip());
+//            }
+//        }
+//        else if(cluster.chamber()==1) {
+//            for(auto strip : cluster.hits()) {
+//                strips_t7.push_back(strip.strip());
+//            }
+//        }
+//    }
+//
+//    //for(auto strip_no : strips_t6) {
+//    //    cout << strip_no << "  ";
+//    //}
+//    //cout << endl;
+//    //cout << "----------------------------------" << endl;
+//
+//    // now check that T6 strips are overlapping with T7
+//    // > will require >=n_min_common strips in common between the chambers
+//    int n_overlap = 0;
+//    for(int i6 = 0; i6 < (int)strips_t6.size(); i6++) {
+//        int t6Strip = strips_t6.at(i6);
+//        for(int i7 = 0; i7 < (int)strips_t7.size(); i7++) {
+//            int t7Strip = strips_t7.at(i7);
+//            if(t6Strip==t7Strip) {
+//                n_overlap++;
+//                break; // move to next strip in T6
+//            }
+//        }
+//    } // loop over T6 strip numbers
+//
+//    if(n_overlap >= n_min_common) overlap = true;
+//    else { overlap = false; }
+//
+//    if(overlap) h_cl_residual->Fill(residual);
+    
+    return overlap;
+}
+//--------------------------------------------------------------//
 // initialize histograms
 void VMMAna::initializeHistograms()
 {
@@ -381,6 +605,8 @@ void VMMAna::initializeHistograms()
     initClusterChargeHistos();
 
     initClusterPositionHistos();
+
+    initResidualHistos();
 
 }
 void VMMAna::initRawHistos()
@@ -415,7 +641,9 @@ void VMMAna::initRawHistos()
 
     // raw chamber hits (no cleaning)
     for(int i = 0; i < 2; i++) {
+        name.str("");
         name << "T" << (i==0 ? "6" : "7") << " Chamber Raw Hit Map";
+        if(i==1) name << " (re-mapped to T6)";
         TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 256, 0, 256);
         h->GetXaxis()->SetTitle("MicroMegas Strip");
         h->GetYaxis()->SetTitle("# of Entries");
@@ -548,6 +776,45 @@ void VMMAna::initClusterChargeHistos()
         h_cl_charge_adc_fix.push_back(h);
     }
     
+
+    // --------------------------------------------------------------------- //
+    //  POST OR
+    // --------------------------------------------------------------------- //
+
+    // cluster charge
+    for(int i = 0 ; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Cluster charge (POST OR)";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 200, 0, 4000);
+        h->GetXaxis()->SetTitle("PDO [ADC counts]");
+        h->GetYaxis()->SetTitle("# of entries");
+        h->GetYaxis()->SetTitleOffset(1.5);
+        h_cl_charge_OR.push_back(h);
+    }
+    
+    // cluster charge (calib)
+    for(int i = 0 ; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Cluster charge with Calibration (POST OR)";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 200, 0, 4000);
+        h->GetXaxis()->SetTitle("PDO [ADC counts]");
+        h->GetYaxis()->SetTitle("# of entries");
+        h->GetYaxis()->SetTitleOffset(1.5);
+        h_cl_charge_calib_OR.push_back(h);
+    }
+
+    // cluster charge (adc fix)
+    for(int i = 0 ; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Cluster charge with Smearing (POST OR)";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 200, 0, 4000);
+        h->GetXaxis()->SetTitle("PDO [ADC counts]");
+        h->GetYaxis()->SetTitle("# of entries");
+        h->GetYaxis()->SetTitleOffset(1.5);
+        h_cl_charge_adc_fix_OR.push_back(h);
+    }
+
+
 }
 void VMMAna::initClusterPositionHistos()
 {
@@ -562,6 +829,35 @@ void VMMAna::initClusterPositionHistos()
         h->GetYaxis()->SetTitleOffset(1.5);
         h_cl_position.push_back(h);
     }
+
+    name.str("");
+
+    for(int i = 0; i < 2; i++) {
+        name.str("");
+        name << "T" << (i==0 ? "6" : "7") << " : Cluster Position in Chamber (POST OR);";
+        TH1F* h = new TH1F(name.str().c_str(), name.str().c_str(), 200, 0, 256*0.4);
+        h->GetXaxis()->SetTitle("Cluster Position [mm]");
+        h->GetYaxis()->SetTitle("# of Entries");
+        h->GetYaxis()->SetTitleOffset(1.5);
+        h_cl_position_OR.push_back(h);
+    }
+}
+//--------------------------------------------------------------//
+void VMMAna::initResidualHistos()
+{
+    stringstream name;
+    name << "T6-T7 Cluster Hit Position Difference";
+    h_cl_residual = new TH1F(name.str().c_str(), name.str().c_str(), 80, -3, 1);
+    h_cl_residual->GetXaxis()->SetTitle("Residual [mm]");
+    h_cl_residual->GetYaxis()->SetTitle("# of Entries");
+    h_cl_residual->GetYaxis()->SetTitleOffset(1.5);
+
+    name.str("");
+    name << "T6 Cluster Position vs. T7 Cluster Position";
+    h2_cl_position_T6vsT7 = new TH2F(name.str().c_str(), name.str().c_str(), 60, 0, 30, 60, 0, 30);
+    h2_cl_position_T6vsT7->GetXaxis()->SetTitle("T6 Cluster Position [mm]");
+    h2_cl_position_T6vsT7->GetYaxis()->SetTitle("T7 Cluster Position [mm]");
+
 }
 //--------------------------------------------------------------//
 void VMMAna::drawHistograms()
@@ -571,6 +867,9 @@ void VMMAna::drawHistograms()
     drawCleanedChargeHistos();
     drawClusterChargeHistos();
     drawClusterPositionHistos();
+    drawClusterChargeHistos_OR();
+    drawClusterPositionHistos_OR();
+    drawClusterResidualHistos();
 }
 //--------------------------------------------------------------//
 void VMMAna::drawRawHistograms()
@@ -705,6 +1004,36 @@ void VMMAna::drawClusterChargeHistos()
 
 }
 //--------------------------------------------------------------//
+void VMMAna::drawClusterChargeHistos_OR()
+{
+    stringstream save_name;
+    c_cluster_charge_OR = new TCanvas("c_cluster_charge_OR", "", 1200, 600);
+    c_cluster_charge_OR->Divide(3,2);
+
+    /////////////// T6
+    // charge
+    c_cluster_charge_OR->cd(1);
+    h_cl_charge_OR.at(0)->Draw();
+    c_cluster_charge_OR->cd(4);
+    h_cl_charge_OR.at(1)->Draw();
+
+    // w/ claib
+    c_cluster_charge_OR->cd(2);
+    h_cl_charge_calib_OR.at(0)->Draw();
+    c_cluster_charge_OR->cd(5);
+    h_cl_charge_calib_OR.at(1)->Draw();
+
+    // with adc fix/smearing
+    c_cluster_charge_OR->cd(3);
+    h_cl_charge_adc_fix_OR.at(0)->Draw();
+    c_cluster_charge_OR->cd(6);
+    h_cl_charge_adc_fix_OR.at(1)->Draw();
+
+    save_name << "cluster_charge_POSTOR_" << runNumberStr() << ".eps";
+    c_cluster_charge_OR->SaveAs(save_name.str().c_str());
+
+}
+//--------------------------------------------------------------//
 void VMMAna::drawClusterPositionHistos()
 {
     stringstream save_name;
@@ -724,6 +1053,48 @@ void VMMAna::drawClusterPositionHistos()
 }
 
 //--------------------------------------------------------------//
+void VMMAna::drawClusterPositionHistos_OR()
+{
+    stringstream save_name;
+    c_cluster_position_OR = new TCanvas("c_cluster_position_OR", "", 1200, 600);
+    c_cluster_position_OR->Divide(1,2);
+
+    // T6
+    c_cluster_position_OR->cd(1);
+    h_cl_position_OR.at(0)->Draw();
+
+    // T7
+    c_cluster_position_OR->cd(2);
+    h_cl_position_OR.at(1)->Draw();
+
+    save_name << "cluster_position_POSTOR_" << runNumberStr() << ".eps";
+    c_cluster_position_OR->SaveAs(save_name.str().c_str());
+}
+//--------------------------------------------------------------//
+void VMMAna::drawClusterResidualHistos()
+{
+    stringstream save_name;
+    c_cluster_residual = new TCanvas("c_cluster_residual", "", 800,600);
+    h_cl_residual->Draw();
+
+    h_cl_residual->SetName("residual");
+    h_cl_residual->SaveAs("residual_histo.root");
+
+    save_name << "cluster_position_residual_" << runNumberStr() << ".eps";
+    c_cluster_residual->SaveAs(save_name.str().c_str());
+    save_name.str("");
+    save_name << "cluster_position_residual_" << runNumberStr() << ".root";
+    c_cluster_residual->SaveAs(save_name.str().c_str());
+
+
+    save_name.str("");
+    c_t6cl_vs_t7cl = new TCanvas("c_t6cl_vs_t7cl", "", 800, 600);
+    c_t6cl_vs_t7cl->cd();
+    h2_cl_position_T6vsT7->Draw("colz");
+    save_name << "cl_position_T6vsT7_" << runNumberStr() << ".root";
+    c_t6cl_vs_t7cl->SaveAs(save_name.str().c_str());
+}
+//--------------------------------------------------------------//
 // load this event's hits
 int VMMAna::loadChamberHits()
 {
@@ -738,6 +1109,10 @@ int VMMAna::loadChamberHits()
             int gray_ = m_grayDecoded->at(ichip).at(ihit);
             int channel_ = m_channel->at(ichip).at(ihit);
             int strip_ = TChamberMapping(chip_, channel_);
+
+            // for T7 chamber, rotate the strips about center to align with T6
+            if(chip_>=4 && chip_<8) strip_ = 255-strip_;
+
             int threshold_ = m_threshold->at(ichip).at(ihit);
             int pdo_ = m_pdo->at(ichip).at(ihit);
             int tdo_ = m_tdo->at(ichip).at(ihit);
@@ -977,7 +1352,6 @@ void VMMAna::Terminate()
     cout << " --------------------- VMMAna::Terminate ---------------------- " << endl;
 
     drawHistograms();
-    getchar();
 }
 
 //--------------------------------------------------------------//

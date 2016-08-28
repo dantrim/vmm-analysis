@@ -31,9 +31,9 @@ class Cluster
         int chamber() { return m_chamber_no; }
 
         void print();
-        std::vector<Hit> m_hits;
 
     private :
+        std::vector<Hit> m_hits;
         int m_clus_pdo;
         int m_chamber_no;
         int n_duplicate_strips;
