@@ -11,9 +11,14 @@ using namespace vmm;
 //--------------------------------------------------------------//
 // Constructor
 Cluster::Cluster() :
-    m_clus_pdo(0),
     m_chamber_no(0),
-    n_duplicate_strips(0)
+    n_duplicate_strips(0),
+    // pdo
+    m_pdo(0),
+    m_pdo_calibrated(0.0),
+    //position
+    m_position_centroid(-1),
+    m_position_centroid_calibrated(-1)
 {
     m_hits.clear();
 }
@@ -24,7 +29,7 @@ struct clusHitStripSmaller {
 void Cluster::addHit(Hit hit)
 {
     m_hits.push_back(hit);
-    m_clus_pdo += hit.pdo();
+    m_pdo += hit.pdo();
 }
 //--------------------------------------------------------------//
 //bool Cluster::operator==(Cluster& rhs)
@@ -52,7 +57,7 @@ void Cluster::removeDuplicateStrips()
                     (m_hits.at(i).bcid() == m_hits.at(j).bcid())) ||
                     (m_hits.at(i).strip() == m_hits.at(j).strip())) {
 
-                        m_hits.erase(m_hits.begin() + i);
+                        m_hits.erase(m_hits.begin() + j);
                         j--;
                         n_duplicate_strips++;
 

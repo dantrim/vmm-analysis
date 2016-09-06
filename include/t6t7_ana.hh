@@ -61,6 +61,7 @@ class VMMAna : public TSelector {
         void removeDuplicateHits();
 
         int makeClusters();
+        void getClusterChargeAndPosition();
         std::vector<vmm::Cluster> clusters;
         void removeDuplicateClusters();
         void removeDuplicateStripsInClusters();
@@ -87,14 +88,22 @@ class VMMAna : public TSelector {
         void initClusterChargeHistos();
         void initClusterPositionHistos();
         void initResidualHistos();
+        void initCorrHistos();
+        void initChargeRatioHistos();
+        void initLeadStripChargeHistos();
 
         ///////////////////////////////////////////////
         // histogram filling
         ///////////////////////////////////////////////
         void fillRawHistograms();
+        void fillChargeHistos();
         void fillClusterMultiplicityHistos();
         void fillClusterHistos();
         void fillClusterHistos_OR();
+        void fillChargeRatioHistos();
+        void fillCorrHistos();
+        void fillLeadStripChargeHistos();
+        
 
         ///////////////////////////////////////////////
         // histogram drawing
@@ -108,6 +117,12 @@ class VMMAna : public TSelector {
         void drawClusterChargeHistos_OR();
         void drawClusterPositionHistos_OR();
         void drawClusterResidualHistos();
+        void drawCorrHistos();
+        void drawChargeRatioHistos();
+        void drawLeadStripChargeHistos();
+
+        int n_total;
+        int n_T6offset_counter;
 
 
         //////////////////////////////////////////////////////////////////////
@@ -163,8 +178,23 @@ class VMMAna : public TSelector {
 
         TCanvas* c_t6cl_vs_t7cl;
         TH2F* h2_cl_position_T6vsT7;
+
+
+        // histograms showing the ratio between strip charges in cluster strips
+        TCanvas* c_cl_strip_qratio;
+        std::vector<TH1F*> h_cl_strip_qratio;
+
+        // histograms showing the PDO of the cluster strip with the largest PDO
+        TCanvas* c_cl_lead_stripq;
+        std::vector<TH1F*> h_cl_lead_stripq;
         
 
+        // Corr Histos
+        TCanvas* c_t6vst7_charge;
+        TH2F* h2_cl_charge_T6vsT7;
+
+        TCanvas* c_t6vst7_strip;
+        TH2F* h2_cl_strip_T6vsT7;
 
 
 

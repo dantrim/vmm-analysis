@@ -27,16 +27,40 @@ class Cluster
         void removeDuplicateStrips();
         int duplicateStrips() { return n_duplicate_strips; }
         
-        int pdo() { return m_clus_pdo; }
         int chamber() { return m_chamber_no; }
 
         void print();
 
+        ////////////////////////////////////////
+        // pdo
+        ////////////////////////////////////////
+
+        int pdo() { return m_pdo; } // set automatically as we add hits
+
+        void setPdoCalibrated(int pdo) { m_pdo_calibrated = pdo; }
+        double pdoCalibrated() { return m_pdo_calibrated; }
+
+        ////////////////////////////////////////
+        // position
+        ////////////////////////////////////////
+        void setPositionCentroid(double pos) { m_position_centroid = pos; }
+        double positionCentroid() { return m_position_centroid; }
+
+        void setPositionCentroidCalibrated(double pos) { m_position_centroid_calibrated = pos; }
+        double positionCentroidCalibrated() { return m_position_centroid_calibrated; }
+
     private :
         std::vector<Hit> m_hits;
-        int m_clus_pdo;
         int m_chamber_no;
         int n_duplicate_strips;
+
+        // pdo
+        int m_pdo;
+        double m_pdo_calibrated;
+
+        // position
+        double m_position_centroid;
+        double m_position_centroid_calibrated;
 
 }; // class
 
