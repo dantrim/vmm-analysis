@@ -31,8 +31,8 @@ VMMAna::VMMAna() :
 }
 //--------------------------------------------------------------//
 // comparison operators for hits/clusters
-struct bcidSmaller { // will sort to have earlier hits first
-    bool operator()(vmm::Hit a, vmm::Hit b) { return a.bcid() < b.bcid(); }
+struct bcidSmaller { // will sort to have earlier hits first (use the gray decoded BCID!)
+    bool operator()(vmm::Hit a, vmm::Hit b) { return a.gray() < b.gray(); }
 } byBCID;
 
 struct clusPdoLarger {
@@ -508,12 +508,14 @@ bool VMMAna::overlappingClusters(int n_min_common)
     double residual = t7_position - t6_position;
     h2_cl_position_T6vsT7->Fill(t6_position, t7_position);
 
-    double overlap_condition = MIN_CLUSTER_SIZE*PITCH + PITCH;
+    //double overlap_condition = MIN_CLUSTER_SIZE*PITCH + PITCH;
+    //double overlap_condition = MIN_CLUSTER_SIZE*1.25;
+    double overlap_condition = 0.1 * 5; // 5 sigma resolution, assuming 100 um resolution (0.1 is in mm)
     //cout << "t6_position - t7_position > " << t6_position << " - " << t7_position << " = " << (t6_position-t7_position) << "  residual: " << residual << "   OR condition: " << overlap_condition << endl;
     if(fabs(t7_position - t6_position) <= overlap_condition) overlap = true;
 
-    //h_cl_residual->Fill(residual);
-    if(overlap) h_cl_residual->Fill(residual);
+    h_cl_residual->Fill(residual);
+    //if(overlap) h_cl_residual->Fill(residual);
 
     return overlap;
 
@@ -1193,19 +1195,19 @@ int VMMAna::loadChamberHits()
             int strip_ = TChamberMapping(chip_, channel_);
 
             // for T7 chamber, rotate the strips about center to align with T6
-            if(chip_>=4 && chip_<8) strip_ = 255-strip_;
+            if(chip_>=4 && chip_<8) strip_ = 257-strip_;
 
             int threshold_ = m_threshold->at(ichip).at(ihit);
             int pdo_ = m_pdo->at(ichip).at(ihit);
             int tdo_ = m_tdo->at(ichip).at(ihit);
 
             if(chip_>=0 && chip_<4) {
-                // fix offset in T6 by +2
-                if(n_T6offset_counter<10) {
-                    cout << "VMMAna::loadChamberHits    Offseting T6 strip number by -2" << endl;
-                    n_T6offset_counter++;
-                }
-                strip_ = strip_ - 2;
+                //// fix offset in T6 by +2
+                //if(n_T6offset_counter<10) {
+                //    cout << "VMMAna::loadChamberHits    Offseting T6 strip number by -2" << endl;
+                //    n_T6offset_counter++;
+                //}
+                //strip_ = strip_ - 2;
                 h.setChamberNo(0);
             }
             else if(chip_>=4 && chip_<8) {
